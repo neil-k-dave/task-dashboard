@@ -1,14 +1,25 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
 from datetime import datetime, timedelta
+import json
+
+
+TASKS_FILE = "tasks.json"
+
 
 class Task:
-    def __init__(self, name, tmin, tmax):
+    def __init__(self, name, tmin, tmax, last_updated = 0):
         self.tmin = tmin
         self.tmax = tmax
+        #self.init_time = init_time
         self.name = name
-        self.last_updated = datetime.now()
         self.success_count = 0
+        
+        if last_updated == 0:
+            self.last_updated = datetime.now()
+        else:
+            self.last_updated = last_updated
+        
 
     def time_since_last_update(self):
         return (datetime.now() - self.last_updated).total_seconds()
@@ -16,6 +27,7 @@ class Task:
     def reset_task(self):
         self.last_updated = datetime.now()
         self.success_count += 1
+        
 
 class TaskButton(QtWidgets.QPushButton):
     
@@ -84,8 +96,44 @@ class TaskManagerApp(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.tasks = []
+        self.load_tasks_json()
+        #print(self.tasks)
         self.initUI()
 
+    def load_tasks_json(self):
+        """Load tasks from JSON file, or return an empty list if file doesn't exist."""
+        try:
+            with open(TASKS_FILE, "r") as file:
+                tasks = json.load(file)
+                # Convert timestamps back to datetime objects
+                for task in tasks:
+                    self.tasks.append(Task(
+       task["task_name"],
+       task["min_time"],
+       task["max_time"],
+       datetime.fromisoformat(task["last_updated"]) if isinstance(task["last_updated"], str) else task["last_updated"]
+   ))
+                    #self.tasks.append( Task(task["task_name"],task['min_time'],task['max_time'],datetime.fromisoformat(task['last_updated'])) )
+                  #  task["creation_time"] = datetime.fromisoformat(task["creation_time"])
+                  #  task["last_completed"] = datetime.fromisoformat(task["last_completed"])
+               # return tasks
+        except FileNotFoundError:
+            return []
+    
+    def save_tasks_json(self):
+        """Save tasks to JSON file, converting datetime and timedelta objects to serializable formats."""
+        json_tasks = []
+        for task in self.tasks:
+            json_tasks.append({
+                "task_name": task.name,
+                "min_time": task.tmin,  
+                "max_time": task.tmax,
+                "success_count": task.success_count,
+                "last_updated": task.last_updated.isoformat()
+            })
+        with open(TASKS_FILE, "w") as file:
+            json.dump(json_tasks, file, indent=4)
+    
     def initUI(self):
         layout = QtWidgets.QVBoxLayout()
         
@@ -108,6 +156,17 @@ class TaskManagerApp(QtWidgets.QWidget):
         self.new_task_maxtime.setPlaceholderText("Enter max...")
         self.add_task_button = QtWidgets.QPushButton("Add Task")
         self.add_task_button.clicked.connect(self.add_task)
+        
+
+        self.task_buttons = []
+        for task in self.tasks:
+           # button = QtWidgets.QPushButton(task["task_name"])
+            #self.update_button_color(button, task)
+            task_button = TaskButton(task)
+            task_button.clicked.connect(self.task_completed)
+            task_button.delete_task_signal.connect(self.delete_task)
+            self.task_buttons_layout.addWidget(task_button)
+        
         add_task_layout = QtWidgets.QHBoxLayout()
         add_task_layout.addWidget(self.new_task_input)
         add_task_layout.addWidget(self.new_task_mintime)
@@ -132,6 +191,7 @@ class TaskManagerApp(QtWidgets.QWidget):
         if task_name and task_min < task_max:
             task = Task(task_name,task_min,task_max)
             self.tasks.append(task)
+            self.save_tasks_json()
             task_button = TaskButton(task)
             task_button.clicked.connect(self.task_completed)
             task_button.delete_task_signal.connect(self.delete_task)
@@ -160,6 +220,7 @@ class TaskManagerApp(QtWidgets.QWidget):
                  if button.task == task:
                      button.deleteLater()  # Remove button from the layout
                      self.task_buttons_layout.removeWidget(button)
+                     self.save_tasks_json()
                      break
 
     def update_tasks(self):
